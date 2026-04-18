@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    # 使用 22.04 保证 runner 响应速度及工具链兼容性
     runs-on: ubuntu-22.04
     steps:
     - name: 安装基础环境
@@ -14,25 +15,27 @@ jobs:
 
     - name: 拉取内核源码
       run: |
-        # 修正了分支名称，去掉了 .0 后缀
+        # 修正分支为 lineage-21，并采用深度 1 加快拉取
         git clone https://github.com/LineageOS/android_kernel_motorola_msm8998 -b lineage-21 --depth=1 kernel
         
-    - name: 集成 KernelSU (手动模式)
+    - name: 集成 KernelSU 并降级版本
       run: |
         cd kernel
-        # 为非 GKI 内核手动添加子模块
+        # 运行官方安装脚本搭建框架
         curl -ls https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
-        # 注意：如果 setup.sh 报错，需手动在 drivers/Kconfig 添加 source "drivers/kernelsu/Kconfig"
+        # 核心：回滚 KSU 到 v0.9.5 稳定版，防止 4.4 内核编译报错
+        cd KernelSU
+        git checkout v0.9.5
+        cd ..
 
     - name: 下载编译工具链 (Proton Clang)
       run: |
         git clone https://github.com/kdrag0n/proton-clang --depth=1 clang
 
-
     - name: 强制开启 KSU 必备内核特性 (Kprobes & OverlayFS)
       run: |
         cd kernel
-        # 将以下关键开关强行追加到 nash 的图纸末尾
+        # 修复 KSU 刷入后显示“未工作”的问题
         echo "CONFIG_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
         echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
         echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/lineageos_nash_defconfig
@@ -41,9 +44,11 @@ jobs:
     - name: 开始编译
       run: |
         cd kernel
+        # 设置工具链环境变量
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        # 将 vendor/nash_defconfig 替换为 lineageos_nash_defconfig
+        # 生成配置文件
         make O=out ARCH=arm64 lineageos_nash_defconfig
+        # 执行满载编译
         make -j$(nproc) O=out ARCH=arm64 \
              CC=clang \
              CROSS_COMPILE=aarch64-linux-gnu- \
@@ -54,5 +59,5 @@ jobs:
     - name: 提取产物
       uses: actions/upload-artifact@v4
       with:
-        name: nash-ksu-kernel
+        name: nash-ksu-kernel-v0.9.5
         path: kernel/out/arch/arm64/boot/Image.gz-dtb
