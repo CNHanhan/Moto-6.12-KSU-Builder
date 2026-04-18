@@ -14,7 +14,8 @@ jobs:
 
     - name: 拉取内核源码
       run: |
-        git clone https://github.com/LineageOS/android_kernel_motorola_msm8998 -b lineage-21.0 --depth=1 kernel
+        # 修正了分支名称，去掉了 .0 后缀
+        git clone https://github.com/LineageOS/android_kernel_motorola_msm8998 -b lineage-21 --depth=1 kernel
         
     - name: 集成 KernelSU (手动模式)
       run: |
