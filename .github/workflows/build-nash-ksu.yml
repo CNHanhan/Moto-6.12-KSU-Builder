@@ -32,7 +32,8 @@ jobs:
       run: |
         cd kernel
         export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
-        make O=out ARCH=arm64 vendor/nash_defconfig
+        # 将 vendor/nash_defconfig 替换为 lineageos_nash_defconfig
+        make O=out ARCH=arm64 lineageos_nash_defconfig
         make -j$(nproc) O=out ARCH=arm64 \
              CC=clang \
              CROSS_COMPILE=aarch64-linux-gnu- \
