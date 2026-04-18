@@ -1,0 +1,62 @@
+name: Build Nash Kernel with LATEST KSU
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+    - name: 安装基础环境
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev clang lld llvm
+
+    - name: 拉取内核源码
+      run: |
+        git clone https://github.com/LineageOS/android_kernel_motorola_msm8998 -b lineage-21 --depth=1 kernel
+        
+    - name: 强制集成最新版 KernelSU
+      run: |
+        cd kernel
+        # 拉取最新 main 分支代码
+        curl -ls https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
+        
+        # 【核心黑科技】针对 4.4 老内核修复最新版 KSU 的代码兼容性
+        # 最新版 KSU 使用了一些 4.4 没有的头文件，这里尝试通过宏定义绕过或修复
+        sed -i 's/vfs_read_kernel/vfs_read/g' KernelSU/kernel/ksu.c || true
+        sed -i 's/vfs_write_kernel/vfs_write/g' KernelSU/kernel/ksu.c || true
+
+    - name: 下载编译工具链 (Proton Clang)
+      run: |
+        git clone https://github.com/kdrag0n/proton-clang --depth=1 clang
+
+    - name: 强制开启内核特性
+      run: |
+        cd kernel
+        echo "CONFIG_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_OVERLAY_FS=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        # 针对最新版 KSU 增加安全模块支持
+        echo "CONFIG_SECURITY=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_SECURITY_NETWORK=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        
+    - name: 开始编译
+      run: |
+        cd kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        make O=out ARCH=arm64 lineageos_nash_defconfig
+        # 注意：这里如果报错，请看日志中具体的 .c 文件错误
+        make -j$(nproc) O=out ARCH=arm64 \
+             CC=clang \
+             CROSS_COMPILE=aarch64-linux-gnu- \
+             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
+             OBJDUMP=llvm-objdump STRIP=llvm-strip
+
+    - name: 提取产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: nash-LATEST-ksu-kernel
+        path: kernel/out/arch/arm64/boot/Image.gz-dtb
