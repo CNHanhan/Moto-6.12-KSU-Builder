@@ -1,0 +1,46 @@
+name: Build Nash Kernel with KSU
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 安装基础环境
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev clang lld llvm
+
+    - name: 拉取内核源码
+      run: |
+        git clone https://github.com/LineageOS/android_kernel_motorola_msm8998 -b lineage-21.0 --depth=1 kernel
+        
+    - name: 集成 KernelSU (手动模式)
+      run: |
+        cd kernel
+        # 为非 GKI 内核手动添加子模块
+        curl -ls https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
+        # 注意：如果 setup.sh 报错，需手动在 drivers/Kconfig 添加 source "drivers/kernelsu/Kconfig"
+
+    - name: 下载编译工具链 (Proton Clang)
+      run: |
+        git clone https://github.com/kdrag0n/proton-clang --depth=1 clang
+
+    - name: 开始编译
+      run: |
+        cd kernel
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        make O=out ARCH=arm64 vendor/nash_defconfig
+        make -j$(nproc) O=out ARCH=arm64 \
+             CC=clang \
+             CROSS_COMPILE=aarch64-linux-gnu- \
+             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
+             OBJDUMP=llvm-objdump STRIP=llvm-strip
+
+    - name: 提取产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: nash-ksu-kernel
+        path: kernel/out/arch/arm64/boot/Image.gz-dtb
