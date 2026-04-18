@@ -19,8 +19,9 @@ jobs:
     - name: 配置构建环境依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential bc coreutils compiler-rt libc6-dev libncurses5-dev
+        sudo apt-get install -y build-essential bc coreutils libc6-dev libncurses5-dev
         sudo apt-get install -y flex bison lz4 tar cpio git wget curl rsync zip unzip
+        sudo apt-get install -y python3 python-is-python3
         # 安装 Google 的 repo 工具
         mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
