@@ -47,9 +47,8 @@ jobs:
     - name: 启动 Bazel 极速编译 (GKI aarch64)
       run: |
         cd android-kernel
-        # 针对 6.12 及以后版本的标准 Kleaf 构建命令
-        # 输出目录指定为 out/dist
-        tools/bazel run //common:kernel_aarch64_dist -- --dist_dir=out/dist
+        # 修正了 Android 16 最新的输出目录参数为 --destdir
+        tools/bazel run //common:kernel_aarch64_dist -- --destdir=out/dist
 
     - name: 提取打包 Boot 镜像 (Artifacts)
       uses: actions/upload-artifact@v4
