@@ -28,6 +28,16 @@ jobs:
       run: |
         git clone https://github.com/kdrag0n/proton-clang --depth=1 clang
 
+
+    - name: 强制开启 KSU 必备内核特性 (Kprobes & OverlayFS)
+      run: |
+        cd kernel
+        # 将以下关键开关强行追加到 nash 的图纸末尾
+        echo "CONFIG_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        echo "CONFIG_OVERLAY_FS=y" >> arch/arm64/configs/lineageos_nash_defconfig
+        
     - name: 开始编译
       run: |
         cd kernel
