@@ -42,12 +42,25 @@ jobs:
           ln -sf $(which ls) ../tools/bazel # 这是一个占位技巧，迫使脚本继续运行
         fi
 
-    - name: 执行 Bazel 编译
+    - name: 修复摩托罗拉路径依赖 (Mock soc-repo)
+      run: |
+        # 脚本期望在 ../soc-repo/kleaf-scripts/ 找文件
+        # 我们直接把当前目录下的 kleaf-scripts 链接过去
+        mkdir -p ../soc-repo
+        ln -sf $(pwd)/kernel-source/kleaf-scripts ../soc-repo/kleaf-scripts
+        
+        # 脚本还尝试在 ../build/ 目录下创建链接
+        mkdir -p ../build
+
+    - name: 执行 Bazel 编译 (针对 Vantage)
       run: |
         cd kernel-source
-        # 确保脚本有执行权限
-        chmod +x build_with_bazel.py
-        # 使用 python3 调用并传入正确的目标参数
+        # 补全之前缺失的工具链路径（确保 ../tools/bazel 存在）
+        mkdir -p ../tools
+        curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -o ../tools/bazel
+        chmod +x ../tools/bazel
+        
+        # 运行编译
         python3 build_with_bazel.py -t canoe vantage -o out/dist
 
     - name: 提取产物
