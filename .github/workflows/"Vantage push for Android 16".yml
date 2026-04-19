@@ -1,4 +1,4 @@
-name: Build Moto Vantage (Android 16) Kernel with KSU
+name: Build Moto Vantage (Official Bazel)
 
 on:
   workflow_dispatch:
@@ -7,54 +7,62 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: 释放磁盘空间
+    - name: 释放服务器空间
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo docker image prune --all --force
 
-    - name: 安装基础环境
+    - name: 安装环境依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev clang lld llvm repo python3
 
-    - name: 拉取 Motorola 官方源码 (Vantage Tag)
+    - name: 下载并精准解压源码
       run: |
-        # 直接克隆你提供的那个特定 Tag
-        git clone https://github.com/MotorolaMobilityLLC/kernel-msm.git -b MMI-W2WV36.55-25-15 --depth=1 kernel
+        # 使用你提供的特定 Tag 链接
+        wget https://github.com/MotorolaMobilityLLC/kernel-msm/archive/refs/tags/MMI-W2WV36.55-25-15.tar.gz
+        mkdir kernel-source
+        # 剥离一层文件夹，让 Makefile 直接出现在 kernel-source 根目录
+        tar -xzf MMI-W2WV36.55-25-15.tar.gz -C kernel-source --strip-components=1
 
     - name: 集成 KernelSU
       run: |
-        cd kernel
-        # 6.12 内核建议使用最新版 KSU
+        cd kernel-source
         curl -ls https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
 
-    - name: 配置编译选项 (LTO & Page Size)
+    - name: 使用 Bazel 极速编译 (推荐方案)
       run: |
-        cd kernel
-        # 针对 vantage 这种现代设备，必须确保配置正确
-        # 如果是 GKI 架构，通常使用 gki_defconfig
-        # 如果是传统架构，查找 arch/arm64/configs/vendor/vantage_defconfig
-        echo "CONFIG_KPROBES=y" >> arch/arm64/configs/gki_defconfig || true
-        echo "CONFIG_OVERLAY_FS=y" >> arch/arm64/configs/gki_defconfig || true
+        cd kernel-source
+        # 你的源码树显示支持 Bazel 编译
+        # 针对 Vantage 机型，通常使用 build.config.msm.canoe 或类似的配置
+        # 这里尝试使用通用的 aarch64 编译目标
+        LTO=thin ./build_with_bazel.py -t aarch64
+      continue-on-error: true
 
-    - name: 执行编译 (使用内置工具链)
+    - name: 备选方案：传统方式编译 (如果 Bazel 失败)
+      if: steps.bazel.outcome == 'failure'
       run: |
-        cd kernel
-        # 现代摩托罗拉源码通常自带构建脚本或使用 Bazel
-        # 如果源码根目录有 build.config，优先使用它
-        if [ -f "build.config" ]; then
-          LTO=thin ./build/build.sh
-        else
-          # 备选方案：手动编译
-          make O=out ARCH=arm64 gki_defconfig
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu-
-        fi
+        cd kernel-source
+        # 下载工具链
+        git clone https://github.com/kdrag0n/proton-clang --depth=1 ../clang
+        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        
+        # 查找配置：你的目录显示有多个 moto 相关的 config 文件
+        # 我们使用 arch/arm64/configs/ 里的基础配置
+        make O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+        
+        # 执行编译
+        make -j$(nproc) O=out ARCH=arm64 \
+             CC=clang \
+             CROSS_COMPILE=aarch64-linux-gnu- \
+             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy \
+             OBJDUMP=llvm-objdump STRIP=llvm-strip
 
     - name: 提取产物
       uses: actions/upload-artifact@v4
       with:
         name: vantage-ksu-kernel
         path: |
-          kernel/out/dist/boot.img
-          kernel/out/dist/init_boot.img
-          kernel/out/arch/arm64/boot/Image
+          kernel-source/out/arch/arm64/boot/Image*
+          kernel-source/out/dist/boot.img
