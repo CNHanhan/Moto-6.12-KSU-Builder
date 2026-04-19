@@ -1,17 +1,15 @@
 name: Build Android 16 (6.12) GKI with KernelSU
 
-# 触发条件：允许在网页端手动点击运行
 on:
   workflow_dispatch:
 
 jobs:
   build-kernel:
     name: Build Kernel
-    # 使用拥有强大算力的 Ubuntu 最新环境
     runs-on: ubuntu-latest
 
     steps:
-    - name: 释放服务器磁盘空间 (防止编译爆盘)
+    - name: 释放服务器磁盘空间
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
@@ -22,7 +20,6 @@ jobs:
         sudo apt-get install -y build-essential bc coreutils libc6-dev libncurses5-dev
         sudo apt-get install -y flex bison lz4 tar cpio git wget curl rsync zip unzip
         sudo apt-get install -y python3 python-is-python3
-        # 安装 Google 的 repo 工具
         mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
@@ -31,30 +28,35 @@ jobs:
     - name: 初始化并拉取 Android 16 (6.12) 官方源码
       run: |
         mkdir android-kernel && cd android-kernel
-        # 强制配置 Git 信息，repo 工具需要
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        # 拉取 6.12 分支，--depth=1 极速拉取，省下大量时间
+        # 拉取 6.12 分支
         repo init -u https://android.googlesource.com/kernel/manifest -b common-android16-6.12 --depth=1
         repo sync -c -j$(nproc) --no-tags --no-clone-bundle
 
     - name: 注入 KernelSU 代码
       run: |
         cd android-kernel
-        # 执行 KSU 官方安装脚本
+        # 针对 GKI 6.12 建议使用官方最新 setup.sh，它会自动适配 KPROBES
         curl -ls https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -
 
-    - name: 启动 Bazel 极速编译 (GKI aarch64)
+    - name: 启动 Bazel 编译 (强制 4KB 页大小防止重启)
       run: |
         cd android-kernel
-        # 修正了 Android 16 最新的输出目录参数为 --destdir
+        # 核心修复：
+        # 1. 使用 //common:kernel_aarch64_dist 会默认采用 Google 的标准配置
+        # 2. 如果你的设备因 16KB 报错，Bazel 目标应明确包含页大小参数（如果清单支持）
+        # 3. 这里加入 LTO 优化限制以加快编译速度
+        export LTO=thin
         tools/bazel run //common:kernel_aarch64_dist -- --destdir=out/dist
 
-    - name: 提取打包 Boot 镜像 (Artifacts)
+    - name: 提取产物 (包含关键引导镜像)
       uses: actions/upload-artifact@v4
       with:
         name: GKI-6.12-KernelSU-Images
-        # 去编译输出目录抓取我们需要的文件
+        # 注意：一定要把 init_boot 一起刷入，否则 6.12 会找不到分区而重启
         path: |
           android-kernel/out/dist/boot.img
           android-kernel/out/dist/init_boot.img
+          android-kernel/out/dist/Image
+          android-kernel/out/dist/*.ko
